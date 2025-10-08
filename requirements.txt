@@ -1,10 +1,7 @@
 # requirements.txt
-selenium
-chromedriver_autoinstaller
 streamlit
 pandas
-selenium
 textblob
+instagrapi
 emoji
 python-dotenv
-openpyxl
