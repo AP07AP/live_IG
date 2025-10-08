@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
-import time
 import os
+import time
 from datetime import datetime
 
-# Selenium imports
+# --- Selenium imports ---
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -15,9 +15,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 
 
-# ===============================
-# Backend: Scraper Function
-# ===============================
+# ===========================================
+# 1️⃣ Function to Run Your Scraper
+# ===========================================
 def scrape_instagram_reels(username, start_date, end_date):
     INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME") or "bethe_shit"
     INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD") or "Imthebobby"
@@ -28,6 +28,7 @@ def scrape_instagram_reels(username, start_date, end_date):
     chrome_options = Options()
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("--headless=new")  # headless for Streamlit
+
     service = Service()
     driver = webdriver.Chrome(service=service, options=chrome_options)
     wait = WebDriverWait(driver, 7)
@@ -97,7 +98,6 @@ def scrape_instagram_reels(username, start_date, end_date):
                 except:
                     pass
 
-                # caption + comments
                 comments = []
                 try:
                     comments_container = WebDriverWait(driver, 5).until(
@@ -110,12 +110,16 @@ def scrape_instagram_reels(username, start_date, end_date):
                     pass
 
                 all_data.append({
+                    "username": TARGET_PROFILE,
                     "URL": reel_url,
                     "Views": views,
                     "Date": date_str,
                     "Time": time_str,
                     "Likes": likes,
-                    "Comment": "; ".join(comments)
+                    "Captions": comments[0] if comments else "",
+                    "Comments": comments[0] if comments else "",
+                    "Sentiment_Label": "",
+                    "Sentiment_Score": ""
                 })
 
                 driver.close()
@@ -130,7 +134,8 @@ def scrape_instagram_reels(username, start_date, end_date):
     driver.quit()
     if all_data:
         df = pd.DataFrame(all_data)
-        csv_path = f"{TARGET_PROFILE}_reels_data.csv"
+        csv_path = f"data/{TARGET_PROFILE}_reels_data.csv"
+        os.makedirs("data", exist_ok=True)
         df.to_csv(csv_path, index=False)
         st.success(f"✅ Scraping completed successfully! Data saved to {csv_path}")
         return csv_path
@@ -139,26 +144,46 @@ def scrape_instagram_reels(username, start_date, end_date):
         return None
 
 
-# ===============================
-# Streamlit Frontend
-# ===============================
-st.title("📊 Instagram Reels Scraper & Sentiment Dashboard")
+# ===========================================
+# 2️⃣ Your Full Frontend UI (Unchanged)
+# ===========================================
+st.title("📊 Instagram Posts Dashboard")
 
-selected_user = st.text_input("👤 Enter Instagram Username").strip()
-from_date = st.date_input("📅 From Date")
-to_date = st.date_input("📅 To Date")
+st.markdown("### 👤 Enter Username")
+selected_user = st.text_input("Enter Instagram Username").strip()
+
+if "show_report" not in st.session_state:
+    st.session_state.show_report = False
+
+from_date = st.date_input("From", value=None)
+to_date = st.date_input("To", value=None)
 
 if st.button("📑 Get Report"):
     if not selected_user:
         st.warning("Please enter a username.")
     elif not from_date or not to_date:
-        st.warning("Please select valid date range.")
+        st.warning("Please select both start and end dates.")
     else:
-        with st.spinner("🔍 Scraping data... please wait, this may take a few minutes ⏳"):
+        with st.spinner("⏳ Scraping data from Instagram..."):
             scraped_file = scrape_instagram_reels(selected_user, from_date, to_date)
 
         if scraped_file:
-            st.info("📂 Loading scraped data...")
             df = pd.read_csv(scraped_file)
-            st.write(f"Total records: {len(df)}")
-            st.dataframe(df.head())
+            st.session_state.df = df
+            st.session_state.show_report = True
+
+
+# ===========================================
+# 3️⃣ Display Dashboard if Data is Available
+# ===========================================
+if st.session_state.show_report and "df" in st.session_state:
+    df = st.session_state.df
+
+    # Convert columns properly
+    df["Likes"] = df["Likes"].astype(str).str.replace(",", "").str.strip()
+    df["Likes"] = pd.to_numeric(df["Likes"], errors="coerce").fillna(0)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
+    df["Time"] = pd.to_datetime(df["Time"], format='%H:%M:%S', errors="coerce").dt.time
+
+    st.markdown(f"## Report for **{selected_user}** ({from_date} → {to_date})")
+    st.dataframe(df)
