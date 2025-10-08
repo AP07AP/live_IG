@@ -1,5 +1,6 @@
 streamlit
 pandas
 textblob
-undetected-chromedriver
 selenium
+undetected-chromedriver
+nltk
