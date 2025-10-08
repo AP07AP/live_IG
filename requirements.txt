@@ -1,7 +1,5 @@
-# requirements.txt
 streamlit
 pandas
 textblob
-instagrapi
-emoji
-python-dotenv
+undetected-chromedriver
+selenium
