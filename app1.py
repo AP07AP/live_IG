@@ -3,12 +3,16 @@ import pandas as pd
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
 from textblob import TextBlob
 import chromedriver_autoinstaller
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 # ==============================
 # 1️⃣ Streamlit UI Inputs
@@ -31,14 +35,13 @@ if st.button("📑 Get Report"):
     END_DATE = str(to_date)
 
     st.info("Starting scraping... This may take a few minutes depending on number of reels.")
-    reels_progress = st.empty()  # Placeholder for live progress updates
 
     # ==============================
     # 2️⃣ Selenium Setup
     # ==============================
     chromedriver_autoinstaller.install()  # Installs correct chromedriver automatically
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--headless=new")  # headless mode
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -46,7 +49,6 @@ if st.button("📑 Get Report"):
 
     driver = webdriver.Chrome(options=chrome_options)
     wait = WebDriverWait(driver, 5)
-
     try:
         # Login
         driver.get("https://www.instagram.com/accounts/login/")
@@ -66,7 +68,6 @@ if st.button("📑 Get Report"):
         all_data = []
         stop_scraping = False
         batches_scraped = 0
-        total_reels_scraped = 0  # Track total reels processed
         reels_container_xpath = '/html/body/div[1]/div/div/div[2]/div/div/div[1]/div[2]/div[1]/section/main/div/div/div[2]/div/div'
 
         while not stop_scraping:
@@ -90,9 +91,6 @@ if st.button("📑 Get Report"):
                     batch_reels.append((reel_url, views_text))
 
                 for reel_url, views in batch_reels:
-                    total_reels_scraped += 1
-                    reels_progress.info(f"📌 Reels covered so far: {total_reels_scraped}")  # Live update
-
                     driver.execute_script("window.open(arguments[0]);", reel_url)
                     driver.switch_to.window(driver.window_handles[-1])
                     time.sleep(3)
@@ -226,11 +224,13 @@ if st.button("📑 Get Report"):
                     st.write(f"**Date:** {post_df.iloc[0]['Date']} | **Time:** {post_df.iloc[0]['Time']}")
                     st.write(f"**Views:** {post_df.iloc[0]['Views']} | **Likes:** {post_df.iloc[0]['Likes']}")
 
+                    # Sentiment breakdown
                     comments_only = post_df[post_df["Comment"].notna()]
                     sentiment_counts_post = comments_only["Sentiment_Label"].value_counts(normalize=True) * 100
                     st.write(f"**Sentiment Split (%):**")
                     st.bar_chart(sentiment_counts_post)
 
+                    # Show all comments
                     st.write("📝 Comments")
                     st.dataframe(comments_only[["Comment", "Sentiment_Label", "Sentiment_Score"]].reset_index(drop=True))
                     st.markdown("---")
