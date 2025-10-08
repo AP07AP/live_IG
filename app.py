@@ -1,15 +1,12 @@
 import streamlit as st
 import pandas as pd
 import time
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from textblob import TextBlob
-import chromedriver_autoinstaller
+import undetected_chromedriver as uc
 
 # ==============================
 # 1️⃣ Streamlit UI Inputs
@@ -35,17 +32,14 @@ if st.button("📑 Get Report"):
     # ==============================
     # 2️⃣ Selenium Setup (Streamlit Cloud compatible)
     # ==============================
-    chromedriver_autoinstaller.install()  # auto-install ChromeDriver
-
-    chrome_options = Options()
+    chrome_options = uc.ChromeOptions()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
 
-    service = Service()
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = uc.Chrome(options=chrome_options)
     wait = WebDriverWait(driver, 10)
 
     try:
@@ -79,7 +73,7 @@ if st.button("📑 Get Report"):
                 # Open reel in new tab
                 driver.execute_script("window.open(arguments[0]);", reel_url)
                 driver.switch_to.window(driver.window_handles[-1])
-                time.sleep(3)
+                time.sleep(2)
 
                 # Get reel datetime
                 try:
@@ -121,10 +115,10 @@ if st.button("📑 Get Report"):
                     likes = "Out of range"
                     all_comments_data = []
 
-                # Process each comment
                 if not all_comments_data:
                     all_comments_data = ["No comments / Caption unavailable"]
 
+                # Process each comment
                 for comment in all_comments_data:
                     sentiment_score = TextBlob(comment).sentiment.polarity
                     if sentiment_score > 0:
