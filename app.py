@@ -1,198 +1,164 @@
 import streamlit as st
 import pandas as pd
 import time
+import os
+from datetime import datetime
+
+# Selenium imports
+from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from textblob import TextBlob
-import undetected_chromedriver as uc
+from selenium.common.exceptions import NoSuchElementException
 
-# ==============================
-# 1️⃣ Streamlit UI Inputs
-# ==============================
-st.title("📊 Instagram Reels Scraper & Sentiment Dashboard")
 
-selected_user = st.text_input("Enter Instagram Username").strip()
-from_date = st.date_input("From")
-to_date = st.date_input("To")
+# ===============================
+# Backend: Scraper Function
+# ===============================
+def scrape_instagram_reels(username, start_date, end_date):
+    INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME") or "bethe_shit"
+    INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD") or "Imthebobby"
+    TARGET_PROFILE = username
+    START_DATE = start_date.strftime("%Y-%m-%d")
+    END_DATE = end_date.strftime("%Y-%m-%d")
 
-INSTAGRAM_USERNAME = st.text_input("Your Instagram Username").strip()
-INSTAGRAM_PASSWORD = st.text_input("Your Instagram Password", type="password")
+    chrome_options = Options()
+    chrome_options.add_argument("--start-maximized")
+    chrome_options.add_argument("--headless=new")  # headless for Streamlit
+    service = Service()
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    wait = WebDriverWait(driver, 7)
 
-if st.button("📑 Get Report"):
-    if not selected_user or not from_date or not to_date or not INSTAGRAM_USERNAME or not INSTAGRAM_PASSWORD:
-        st.warning("Please enter all required fields!")
-        st.stop()
+    st.info("🔐 Logging into Instagram...")
+    driver.get("https://www.instagram.com/accounts/login/")
+    wait.until(EC.presence_of_element_located((By.NAME, "username")))
+    driver.find_element(By.NAME, "username").send_keys(INSTAGRAM_USERNAME)
+    driver.find_element(By.NAME, "password").send_keys(INSTAGRAM_PASSWORD)
+    driver.find_element(By.NAME, "password").send_keys(Keys.ENTER)
+    time.sleep(7)
 
-    START_DATE = str(from_date)
-    END_DATE = str(to_date)
-    st.info("Starting scraping... This may take a few minutes depending on number of reels.")
+    st.info(f"📸 Opening {TARGET_PROFILE}'s Reels page...")
+    driver.get(f"https://www.instagram.com/{TARGET_PROFILE}/reels/")
+    time.sleep(5)
 
-    # ==============================
-    # 2️⃣ Selenium Setup (Streamlit Cloud compatible)
-    # ==============================
-    chrome_options = uc.ChromeOptions()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
+    all_data = []
+    stop_scraping = False
+    batches_scraped = 0
+    reels_container_xpath = '/html/body/div[1]/div/div/div[2]/div/div/div[1]/div[2]/div[1]/section/main/div/div/div[2]/div/div'
 
-    driver = uc.Chrome(options=chrome_options)
-    wait = WebDriverWait(driver, 10)
+    while not stop_scraping:
+        try:
+            reels_container = driver.find_element(By.XPATH, reels_container_xpath)
+        except Exception:
+            break
 
-    try:
-        # Login
-        driver.get("https://www.instagram.com/accounts/login/")
-        wait.until(EC.presence_of_element_located((By.NAME, "username")))
-        driver.find_element(By.NAME, "username").send_keys(INSTAGRAM_USERNAME)
-        driver.find_element(By.NAME, "password").send_keys(INSTAGRAM_PASSWORD)
-        driver.find_element(By.NAME, "password").send_keys(Keys.ENTER)
-        time.sleep(7)
-        st.success("✅ Logged in successfully.")
+        batch_elements = reels_container.find_elements(By.XPATH, './div/div')
+        total_batches = len(batch_elements)
+        st.write(f"📦 Batches loaded: {total_batches}")
 
-        # Go to user's reels page
-        driver.get(f"https://www.instagram.com/{selected_user}/reels/")
-        time.sleep(5)
-        st.info("Scraping reels...")
-
-        all_data = []
-        stop_scraping = False
-        batches_scraped = 0
-        reels_container_xpath = '//div[@role="main"]//div[contains(@class,"_aabd")]'
-
-        while not stop_scraping:
-            reels_container = driver.find_elements(By.XPATH, reels_container_xpath)
-            if not reels_container:
+        for batch_index in range(batches_scraped, total_batches):
+            if stop_scraping:
                 break
 
-            for reel_elem in reels_container[batches_scraped:]:
-                reel_url = reel_elem.find_element(By.TAG_NAME, "a").get_attribute("href")
-                
-                # Open reel in new tab
+            batch = batch_elements[batch_index]
+            reel_links = batch.find_elements(By.XPATH, './div/div/a')
+            batch_reels = []
+
+            for reel in reel_links:
+                reel_url = reel.get_attribute("href")
+                try:
+                    views_text = reel.find_element(By.XPATH, ".//div[2]/div[2]/div/div[2]/div/span/span").text
+                except NoSuchElementException:
+                    views_text = "N/A"
+                batch_reels.append((reel_url, views_text))
+
+            for reel_url, views in batch_reels:
                 driver.execute_script("window.open(arguments[0]);", reel_url)
                 driver.switch_to.window(driver.window_handles[-1])
-                time.sleep(2)
-
-                # Get reel datetime
+                time.sleep(3)
                 try:
-                    datetime_str = driver.find_element(By.TAG_NAME, "time").get_attribute("datetime")
-                    date_str = datetime_str[:10]
-                    time_str = datetime_str[11:19]
-                except:
-                    date_str = "N/A"
-                    time_str = "N/A"
+                    date_str = driver.find_element(By.TAG_NAME, "time").get_attribute("datetime")[:10]
+                    time_str = driver.find_element(By.TAG_NAME, "time").get_attribute("datetime")[11:23]
+                except NoSuchElementException:
+                    date_str, time_str = "N/A", "N/A"
 
-                # Stop if date is earlier than START_DATE
-                if date_str != "N/A" and date_str < START_DATE:
+                if batch_index > 0 and date_str != "N/A" and date_str < START_DATE:
                     stop_scraping = True
                     driver.close()
                     driver.switch_to.window(driver.window_handles[0])
                     break
 
-                if date_str != "N/A" and START_DATE <= date_str <= END_DATE:
-                    # Likes
-                    try:
-                        likes = driver.find_element(By.CSS_SELECTOR, "section span").text
-                    except:
-                        likes = "N/A"
+                likes = "N/A"
+                try:
+                    likes = driver.find_element(By.CSS_SELECTOR, "span.html-span.xdj266r.x14z9mp.xat24cr").text
+                except:
+                    pass
 
-                    # Comments
-                    all_comments_data = []
-                    try:
-                        comments_container = WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.XPATH, '//ul[contains(@class,"_aa_")]'))
-                        )
-                        comment_elems = comments_container.find_elements(By.XPATH, './/li//span')
-                        for comment_elem in comment_elems:
-                            text = comment_elem.text.strip()
-                            if text:
-                                all_comments_data.append(text)
-                    except:
-                        pass
-                else:
-                    likes = "Out of range"
-                    all_comments_data = []
+                # caption + comments
+                comments = []
+                try:
+                    comments_container = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.x5yr21d"))
+                    )
+                    caption_elem = comments_container.find_element(By.XPATH, './/div/div[1]/div/div[2]/div/span/div/span')
+                    caption_text = caption_elem.text.strip()
+                    comments.append(caption_text)
+                except:
+                    pass
 
-                if not all_comments_data:
-                    all_comments_data = ["No comments / Caption unavailable"]
-
-                # Process each comment
-                for comment in all_comments_data:
-                    sentiment_score = TextBlob(comment).sentiment.polarity
-                    if sentiment_score > 0:
-                        sentiment_label = "Positive"
-                    elif sentiment_score < 0:
-                        sentiment_label = "Negative"
-                    else:
-                        sentiment_label = "Neutral"
-
-                    all_data.append({
-                        "URL": reel_url,
-                        "Date": date_str,
-                        "Time": time_str,
-                        "Likes": likes,
-                        "Comment": comment,
-                        "Sentiment_Label": sentiment_label,
-                        "Sentiment_Score": sentiment_score
-                    })
+                all_data.append({
+                    "URL": reel_url,
+                    "Views": views,
+                    "Date": date_str,
+                    "Time": time_str,
+                    "Likes": likes,
+                    "Comment": "; ".join(comments)
+                })
 
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
                 time.sleep(1)
 
             batches_scraped += 1
-            if not stop_scraping:
-                driver.execute_script("window.scrollBy(0, 1000);")
-                time.sleep(2)
 
-        driver.quit()
+        driver.execute_script("window.scrollBy(0, 1000);")
+        time.sleep(2)
 
-        # ==============================
-        # 3️⃣ Convert to DataFrame & Display
-        # ==============================
-        if all_data:
-            df = pd.DataFrame(all_data)
-            st.success(f"✅ Scraping completed! Total reels collected: {df['URL'].nunique()}")
+    driver.quit()
+    if all_data:
+        df = pd.DataFrame(all_data)
+        csv_path = f"{TARGET_PROFILE}_reels_data.csv"
+        df.to_csv(csv_path, index=False)
+        st.success(f"✅ Scraping completed successfully! Data saved to {csv_path}")
+        return csv_path
+    else:
+        st.warning("⚠️ No data scraped.")
+        return None
 
-            st.subheader("👤 User Overview")
-            st.write(f"**Username:** {selected_user}")
-            st.write(f"**Date Range:** {START_DATE} to {END_DATE}")
-            st.write(f"**Total Reels Collected:** {df['URL'].nunique()}")
-            try:
-                total_likes = df["Likes"].replace("N/A", 0).astype(int).sum()
-            except:
-                total_likes = "N/A"
-            st.write(f"**Total Likes:** {total_likes}")
 
-            sentiment_counts = df["Sentiment_Label"].value_counts(normalize=True) * 100
-            st.write(f"**Sentiment Distribution (%):**")
-            st.bar_chart(sentiment_counts)
+# ===============================
+# Streamlit Frontend
+# ===============================
+st.title("📊 Instagram Reels Scraper & Sentiment Dashboard")
 
-            # Drill-down per reel
-            st.subheader("🔍 Explore Reels")
-            reel_urls = df["URL"].unique().tolist()
-            selected_reels = st.multiselect("Select one or more Reels to explore", reel_urls)
+selected_user = st.text_input("👤 Enter Instagram Username").strip()
+from_date = st.date_input("📅 From Date")
+to_date = st.date_input("📅 To Date")
 
-            for url in selected_reels:
-                post_df = df[df["URL"] == url]
-                if not post_df.empty:
-                    st.markdown(f"### [Reel Link]({url})")
-                    st.write(f"**Date:** {post_df.iloc[0]['Date']} | **Time:** {post_df.iloc[0]['Time']}")
-                    st.write(f"**Likes:** {post_df.iloc[0]['Likes']}")
+if st.button("📑 Get Report"):
+    if not selected_user:
+        st.warning("Please enter a username.")
+    elif not from_date or not to_date:
+        st.warning("Please select valid date range.")
+    else:
+        with st.spinner("🔍 Scraping data... please wait, this may take a few minutes ⏳"):
+            scraped_file = scrape_instagram_reels(selected_user, from_date, to_date)
 
-                    comments_only = post_df[post_df["Comment"].notna()]
-                    sentiment_counts_post = comments_only["Sentiment_Label"].value_counts(normalize=True) * 100
-                    st.write(f"**Sentiment Split (%):**")
-                    st.bar_chart(sentiment_counts_post)
-
-                    st.write("📝 Comments")
-                    st.dataframe(comments_only[["Comment", "Sentiment_Label", "Sentiment_Score"]].reset_index(drop=True))
-                    st.markdown("---")
-        else:
-            st.warning("No reels found in the selected date range.")
-
-    except Exception as e:
-        st.error(f"Error occurred: {e}")
-        driver.quit()
+        if scraped_file:
+            st.info("📂 Loading scraped data...")
+            df = pd.read_csv(scraped_file)
+            st.write(f"Total records: {len(df)}")
+            st.dataframe(df.head())
