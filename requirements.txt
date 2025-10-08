@@ -1,4 +1,6 @@
 # requirements.txt
+selenium
+chromedriver_autoinstaller
 streamlit
 pandas
 selenium
