@@ -10,6 +10,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 from textblob import TextBlob
+import chromedriver_autoinstaller
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 # ==============================
 # 1️⃣ Streamlit UI Inputs
@@ -36,13 +39,16 @@ if st.button("📑 Get Report"):
     # ==============================
     # 2️⃣ Selenium Setup
     # ==============================
+    chromedriver_autoinstaller.install()  # Installs correct chromedriver automatically
     chrome_options = Options()
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--headless=new")  # run headless
-    service = Service()
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    wait = WebDriverWait(driver, 5)
+    chrome_options.add_argument("--headless=new")  # headless mode
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
 
+    driver = webdriver.Chrome(options=chrome_options)
+    wait = WebDriverWait(driver, 5)
     try:
         # Login
         driver.get("https://www.instagram.com/accounts/login/")
